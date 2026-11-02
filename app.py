@@ -611,7 +611,8 @@ def _render_voice_qa() -> None:
     st.divider()
 
     # The browser records the audio and sends WAV bytes to Streamlit. No
-    # server-side microphone or PyAudio object is used.
+    # server-side microphone or PyAudio object is used. 16 kHz mono keeps the
+    # upload and recognition payload small while remaining clear for speech.
     audio_file = st.audio_input(
         f"Record a question (up to {MAX_AUDIO_SECONDS} seconds)",
         key=f"voice_audio_{st.session_state.voice_audio_key}",

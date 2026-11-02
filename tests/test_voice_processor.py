@@ -84,6 +84,7 @@ class FakeEngine:
 
 
 def test_valid_wav_is_accepted():
+    # A real WAV is used so wave decoding is exercised, not mocked.
     audio_bytes = make_wav(seconds=2.0)
 
     validate_audio(audio_bytes)
@@ -120,6 +121,7 @@ def test_oversized_audio_is_rejected():
 
 
 def test_audio_longer_than_limit_is_rejected():
+    # 30 seconds is the project's limit, so 32 seconds must fail validation.
     audio_bytes = make_wav(seconds=MAX_AUDIO_SECONDS + 2)
 
     with pytest.raises(VoiceProcessingError, match="too long"):
@@ -127,6 +129,8 @@ def test_audio_longer_than_limit_is_rejected():
 
 
 def test_successful_transcription_returns_text():
+    # The fake recognizer records whether the WAV was opened and returns text
+    # without contacting Google.
     audio_bytes = make_wav()
     recognizer = FakeRecognizer(text="Explain paging on page 2.")
 
@@ -138,6 +142,7 @@ def test_successful_transcription_returns_text():
 
 
 def test_unclear_speech_raises_helpful_error():
+    # SpeechRecognition uses UnknownValueError for silence or unclear audio.
     recognizer = FakeRecognizer(error=sr.UnknownValueError())
 
     with pytest.raises(VoiceProcessingError, match="could not be understood"):
@@ -145,6 +150,7 @@ def test_unclear_speech_raises_helpful_error():
 
 
 def test_speech_service_failure_raises_helpful_error():
+    # RequestError represents a network or recognition-service problem.
     recognizer = FakeRecognizer(error=sr.RequestError("service unavailable"))
 
     with pytest.raises(VoiceProcessingError, match="service is unavailable"):
@@ -159,6 +165,8 @@ def test_empty_transcription_is_rejected():
 
 
 def test_unchanged_audio_is_not_transcribed_twice():
+    # This mirrors the Streamlit rerun path: the same bytes and cached result
+    # must not trigger a second recognition request.
     audio_bytes = make_wav()
     recognizer = FakeRecognizer(text="What is this?")
 
@@ -190,6 +198,7 @@ def test_empty_tts_text_is_rejected():
 
 
 def test_tts_text_is_limited_before_synthesis():
+    # Long answers are shortened for speech, but the text answer is untouched.
     engine = FakeEngine()
 
     text_to_speech("word " * (MAX_TTS_CHARS), engine_factory=lambda: engine)
@@ -199,6 +208,7 @@ def test_tts_text_is_limited_before_synthesis():
 
 
 def test_tts_returns_playable_wav_bytes():
+    # The fake engine writes a valid WAV, so no real speech engine is needed.
     engine = FakeEngine()
 
     audio_bytes = text_to_speech("A short answer.", engine_factory=lambda: engine)
@@ -210,6 +220,7 @@ def test_tts_returns_playable_wav_bytes():
 
 
 def test_unavailable_tts_engine_degrades_gracefully():
+    # The app must keep text answers usable when no speech engine exists.
     def failing_engine():
         raise RuntimeError("no speech engine")
 
