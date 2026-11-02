@@ -1,13 +1,37 @@
 # Multimodal AI Assistant
 
 A college mini project that answers questions about **images**, **PDF documents**,
-and **spoken questions**. It combines image understanding, visual PDF analysis,
+and **spoken questions**, combining image understanding, visual PDF analysis,
 speech recognition, and optional local speech output in one Streamlit app.
 
+> **Status:** all three features are integrated. Automated suite: **87 passing**.
+> Live Groq answers and real-microphone tests still require your own key and
+> hardware — see the manual checklist.
+>
 > **Provider note:** the project brief mentioned Gemini, but this implementation
 > uses the project's existing **Groq** integration. No Gemini SDK, LangChain,
 > vector database, or OCR framework is used. All AI requests go through the
 > official Groq Python SDK.
+
+---
+
+## Contents
+
+1. [Problem statement](#1-problem-statement)
+2. [Project objectives](#2-project-objectives)
+3. [Main features](#3-main-features)
+4. [Technology stack](#4-technology-stack)
+5. [System architecture](#5-system-architecture)
+6. [Folder structure](#6-folder-structure)
+7. [Installation](#7-installation)
+8. [API key configuration](#8-api-key-configuration)
+9. [How to run](#9-how-to-run)
+10. [How to use each feature](#10-how-to-use-each-feature)
+11. [Example inputs and outputs](#11-example-inputs-and-outputs)
+12. [Testing](#12-testing)
+13. [Known limitations](#13-known-limitations)
+14. [Security and privacy](#14-security-and-privacy)
+15. [Future improvements](#15-future-improvements)
 
 ---
 
@@ -28,7 +52,7 @@ This project provides a single assistant that:
 - Returns grounded answers with page references where possible.
 - Can speak an answer aloud on supported local systems.
 
-## 2. Objectives
+## 2. Project Objectives
 
 1. Integrate image, PDF, and voice question answering in one application.
 2. Use a vision-language model for both images and rendered PDF pages.
@@ -78,12 +102,13 @@ This project provides a single assistant that:
 - Answers survive UI reruns.
 - Uploading a different image or PDF clears that document's conversation.
 - Histories are capped at **20 Q&A pairs**.
-- Editing a voice question or changing context invalidates old answers/speech.
+- Editing a voice question or changing context invalidates old answers and speech.
 - A sidebar **Clear session** button resets all three features.
 
 ## 4. Technology Stack
 
-Versions tested in the project virtual environment (**Python 3.11.15**):
+Versions tested on **Python 3.11.15** (Windows, `win32`) in both the project
+virtual environment and a clean temporary virtual environment:
 
 | Purpose | Package | Tested version |
 | --- | --- | --- |
@@ -98,8 +123,7 @@ Versions tested in the project virtual environment (**Python 3.11.15**):
 | Test HTTP objects | `httpx` | 0.28.1 |
 
 Windows speech support pulled in `comtypes 1.4.17`, `pywin32 312`, and
-`pypiwin32 223`. These are installed automatically as pyttsx3 dependencies; they
-are not separate project requirements.
+`pypiwin32 223` as pyttsx3 dependencies. They are not separate requirements.
 
 **No Google GenAI SDK is installed or required.** The app uses Groq's
 OpenAI-compatible chat completions API for both text and vision requests.
@@ -177,41 +201,48 @@ Multimodal AI Assistant/
 
 ## 7. Installation
 
-Requirements: **Python 3.11**, internet access for AI/speech services, and a Groq
-API key from <https://console.groq.com/keys>.
+Requirements: **Python 3.11**, internet access for AI/speech services, and a
+Groq API key from <https://console.groq.com/keys>.
 
-```bash
-python --version
-python -m venv .venv
-```
-
-Activate the environment:
-
-Windows PowerShell:
+### Windows PowerShell — quickest path
 
 ```powershell
+cd "path\to\Multimodal AI Assistant"
+python --version          # should print 3.11.x
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-Windows Command Prompt:
-
-```bat
-.venv\Scripts\activate.bat
-```
-
-macOS / Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install exact pinned dependencies:
-
-```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip check
 ```
+
+If activation is blocked by the execution policy, allow local scripts once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+### Windows Command Prompt
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip check
+```
+
+### macOS / Linux
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip check
+```
+
+A successful `pip check` prints `No broken requirements found.`
 
 ## 8. API Key Configuration
 
@@ -236,23 +267,52 @@ GROQ_VISION_MODEL=qwen/qwen3.8-27b
 ```
 
 - `GROQ_API_KEY` is required for AI answers and is never displayed.
-- `GROQ_MODEL` is used by general text questions (voice General context).
+- `GROQ_MODEL` is used by general text questions.
 - `GROQ_VISION_MODEL` is used for images and rendered PDF pages.
 - `.env` is ignored by Git. Never commit it.
 
-If the key is missing, the app still opens and shows a configuration warning.
-Invalid keys, unavailable models, rate limits, timeouts, and empty responses are
-reported with short, safe messages.
+The sidebar shows whether configuration was loaded. If the key is missing, the
+app still opens and shows a warning. Invalid keys, unavailable models, rate
+limits, timeouts, and empty responses are reported with short, safe messages.
+Model names must exist in your Groq account.
 
 ## 9. How to Run
 
-```bash
+With the virtual environment activated:
+
+```powershell
 streamlit run app.py
+```
+
+If `streamlit` is not recognized:
+
+```powershell
+python -m streamlit run app.py
 ```
 
 Open the URL shown in the terminal, normally <http://localhost:8501>.
 
-The app can start without a key. AI features require valid configuration.
+Useful options:
+
+```powershell
+# Use another port if 8501 is busy
+python -m streamlit run app.py --server.port 8502
+
+# Stop the server
+Ctrl+C
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `Activate.ps1 cannot be loaded` | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `streamlit` not recognized | Use `python -m streamlit run app.py` |
+| Port 8501 already in use | Add `--server.port 8502` |
+| Sidebar says AI is not configured | Check `.env` exists and contains a valid `GROQ_API_KEY` |
+| Speech recognition fails | Check internet access; Google's speech service is online |
+| Speech generation unavailable | Install a system TTS engine (SAPI5 on Windows, espeak on Linux) |
+| `pip check` reports conflicts | Recreate the venv and reinstall `requirements.txt` |
 
 ## 10. How to Use Each Feature
 
@@ -264,13 +324,6 @@ The app can start without a key. AI features require valid configuration.
 4. Type a question and press **Ask AI**.
 5. Read the answer in the conversation below the form.
 
-Example questions:
-
-- "What objects are visible?"
-- "Explain this diagram."
-- "Read the text in this screenshot."
-- "What is unusual about this picture?"
-
 ### PDF Question Answering
 
 1. Choose **PDF Question Answering**.
@@ -281,17 +334,8 @@ Example questions:
 6. Type a question and press **Ask AI**.
 7. Read the answer and the pages analyzed.
 
-Example questions:
-
-- "Summarize page 1."
-- "Explain the diagram on page 5."
-- "Explain the table on page 7."
-- "What does this flowchart represent?"
-- "What is the difference between paging and segmentation?"
-- "Explain this scanned page."
-
 Whole-document mode selects at most three pages using simple keyword overlap.
-If no page matches confidently, the app asks you to choose a page manually.
+If no page matches confidently, choose a page manually in Selected page mode.
 
 ### Voice Assistant
 
@@ -306,8 +350,13 @@ If no page matches confidently, the app asks you to choose a page manually.
 8. Use **Reset interaction** to clear the recording and result.
 
 Speech recognition uses Google's online service, so it needs internet access.
-Text-to-speech uses the server's local pyttsx3 engine. If no engine is available,
-the app keeps the text answer and shows a warning.
+Text-to-speech runs on the machine hosting Streamlit and returns a WAV file for
+the browser to play. If no engine is available, the text answer is still shown.
+
+### Clearing state
+
+Use **Clear session** in the sidebar to reset uploaders, documents, chat
+histories, voice results, and cached PDF renders for the current browser session.
 
 ## 11. Example Inputs and Outputs
 
@@ -322,13 +371,18 @@ the app keeps the text answer and shows a warning.
 | Spoken PDF question | "Summarize this document." | Answer using selected PDF pages |
 
 AI output is probabilistic. Answers should be checked against the source
-document, especially for numerical or medical/legal content.
+document, especially for numerical, medical, or legal content.
 
 ## 12. Testing
 
-```bash
+Run the automated suite:
+
+```powershell
 python -m pytest
 ```
+
+Expected result on a healthy installation: **87 passed** (two deprecation
+warnings from SpeechRecognition's `aifc`/`audioop` imports on Python 3.11).
 
 The suite mocks all external AI and speech services, so it does not use your key
 or consume credits. Synthetic images, PDFs, and WAV files are created in memory.
@@ -342,32 +396,45 @@ Coverage includes:
 - WAV decoding, duration/size limits, mocked speech recognition.
 - TTS success, unavailable engine, synthesis failure, text limiting.
 - Voice context routing, missing image/PDF context.
-- App-level session state, chat history, document reset, clear session, duplicate
-  transcription prevention, and missing configuration warning.
+- App-level session state, chat history, document reset, clear session,
+  duplicate-transcription prevention, and missing-configuration warning.
 
 Optional real-API image check:
 
-```bash
-python -m tests.manual_image_qa --image path/to/image.png
+```powershell
+python -m tests.manual_image_qa --image path\to\image.png
 ```
 
-This manual script is not collected by pytest because its name does not start
-with `test_`.
+This script is not collected by pytest because its name does not start with
+`test_`.
 
 ### Manual demonstration checklist
 
-| # | Check | Status |
+These require a real Groq key, and tests 6–8 also need a microphone and a working
+speech engine. They were **not** run during the automated validation.
+
+| # | Check | Requirement |
 | --- | --- | --- |
-| 1 | Image: "What objects are visible?" | Requires a real Groq key |
-| 2 | Diagram: "Explain this diagram." | Requires a real Groq key |
-| 3 | Text PDF: "Summarize page 1." | Requires a real Groq key |
-| 4 | Flowchart PDF: "Explain the flowchart." | Requires a real Groq key |
-| 5 | Scanned PDF: "What does this page contain?" | Requires a real Groq key |
-| 6 | Record "What is artificial intelligence?" | Requires a microphone and Google speech access |
-| 7 | Spoken PDF question | Requires a microphone, speech access, and Groq key |
-| 8 | Generate speech | Local pyttsx3 synthesis was verified on Windows; audible playback depends on the machine |
-| 9 | Remove API key | Automated AppTest verifies the warning |
-| 10 | Invalid files | Automated tests verify friendly errors |
+| 1 | Image: "What objects are visible?" | Real Groq key |
+| 2 | Diagram: "Explain this diagram." | Real Groq key |
+| 3 | Text PDF: "Summarize page 1." | Real Groq key |
+| 4 | Flowchart PDF: "Explain the flowchart." | Real Groq key |
+| 5 | Scanned PDF: "What does this page contain?" | Real Groq key |
+| 6 | Record "What is artificial intelligence?" | Microphone + Google speech access |
+| 7 | Spoken PDF question | Microphone + speech access + Groq key |
+| 8 | Generate speech and hear playback | Working local TTS engine |
+| 9 | Remove API key → helpful warning | Verified automatically |
+| 10 | Invalid files → friendly errors | Verified automatically |
+
+### Dependency verification performed
+
+- `Python 3.11.15`, clean temporary virtual environment.
+- `pip install -r requirements.txt` succeeded.
+- `pip check` reported no broken requirements.
+- All project modules imported successfully.
+- `google-genai` confirmed absent and not required (Groq is used).
+- Streamlit health endpoint returned `200 ok`.
+- Full pytest suite passed in both the project venv and the clean venv.
 
 ## 13. Known Limitations
 
@@ -378,14 +445,15 @@ with `test_`.
 - **Text extraction is not OCR.** Scanned pages are understood from the rendered
   page image, so accuracy depends on scan quality and the vision model.
 - Password-protected PDFs are rejected.
-- Upload limits: images 10 MB, PDFs 20 MB / 30 pages, audio 30 seconds.
+- Upload limits: images 10 MB / 40 MP / 1600 px, PDFs 20 MB / 30 pages, audio
+  30 seconds / 12 MB.
 - Speech recognition is online and may fail or mis-transcribe.
 - Local TTS needs a working system engine (SAPI5 on Windows, espeak on Linux)
   and is not ideal for a multi-user production server.
 - The vision model may not support every diagram or language equally well.
-- Answers can be incomplete or wrong; the model is instructed to admit missing
-  context but this is not guaranteed.
-- The app does not provide authentication, databases, or long-term storage.
+- Answers can be incomplete or wrong; the prompt asks the model to admit
+  missing context, but that is not guaranteed.
+- The app has no authentication, database, or long-term storage.
 - The project uses Groq rather than Gemini; model names must exist in your Groq
   account.
 
@@ -397,28 +465,29 @@ with `test_`.
 - Uploaded content is never executed.
 - Uploaded files are processed in memory and are not permanently saved by the app.
 - TTS temporary WAV files use unique names and are deleted in a `finally` block.
-- Request timeouts are set for AI calls.
+- AI requests use a 60-second timeout.
 - Document text, image bytes, and audio are not logged.
 - No raw provider error details are shown to users.
-- **Uploaded images, PDF pages, and questions may be sent to Groq. Recorded
-  audio is sent to Google's speech recognition service.** Do not upload private
-  material unless you are comfortable with that processing.
+- **Uploaded images, PDF text and rendered pages, and questions may be sent to
+  Groq. Recorded audio is sent to Google's speech recognition service.** Do not
+  upload private material unless you are comfortable with that processing.
 
 ## 15. Future Improvements
 
 - Optional OCR fallback for scanned PDFs.
-- Better page retrieval using embeddings, if the project scope allows it.
+- Semantic page retrieval using embeddings, if scope allows.
 - Streaming answers for faster perceived response.
 - Multilingual speech recognition and voices.
 - Cloud TTS for browser-friendly playback on headless servers.
 - User accounts and saved history.
 - PDF page-range selection and side-by-side citations.
 - Support for more document formats.
-- Evaluation set for measuring answer accuracy and hallucination rate.
+- An evaluation set for measuring answer accuracy and hallucination rate.
 
 ---
 
 ## License and Academic Use
 
 This project was developed for academic demonstration. Model names, provider
-terms, quotas, and SDK versions should be checked before submission or deployment.
+terms, quotas, and SDK versions should be checked before submission or
+deployment.
