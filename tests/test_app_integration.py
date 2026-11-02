@@ -22,6 +22,8 @@ APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 
 
 class FakeCompletions:
+    """Minimal stand-in for Groq's chat.completions resource."""
+
     def __init__(self, content="Mocked answer."):
         self.content = content
         self.calls = 0
@@ -38,6 +40,8 @@ class FakeCompletions:
 
 
 class FakeClient:
+    """Minimal stand-in for groq.Groq so tests never use the network."""
+
     def __init__(self, content="Mocked answer."):
         self.completions = FakeCompletions(content=content)
         self.chat = SimpleNamespace(completions=self.completions)
@@ -80,38 +84,45 @@ def fake_speech(monkeypatch):
 
 
 def make_image_bytes(color="red") -> bytes:
+    """Create a small PNG in memory without writing a temporary file."""
     buffer = BytesIO()
     Image.new("RGB", (64, 48), color).save(buffer, format="PNG")
     return buffer.getvalue()
 
 
 def make_pdf_bytes(text="Page one content.") -> bytes:
+    """Create a one-page PDF with selectable text."""
     document = pymupdf.open()
     try:
         page = document.new_page()
         page.insert_text((72, 72), text)
         return document.tobytes()
     finally:
+        # Always close the document, even if building the PDF fails.
         document.close()
 
 
 def make_wav(seconds=1.0) -> bytes:
+    """Create silent 16 kHz mono WAV bytes for the audio widget."""
     buffer = BytesIO()
     with wave.open(buffer, "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(16000)
+        # Two bytes per sample because sampwidth is 2.
         wav_file.writeframes(b"\x00" * int(seconds * 16000) * 2)
     return buffer.getvalue()
 
 
 def submit_image_question(app, question="What is in this image?"):
+    """Type a question and press the image page's Ask AI button."""
     app.text_input[0].set_value(question)
     next(button for button in app.button if button.label == "Ask AI").click()
     return app.run()
 
 
 def submit_pdf_question(app, question="Summarize page 1."):
+    """Type a question and press the PDF page's Ask AI button."""
     app.text_input[0].set_value(question)
     next(button for button in app.button if button.label == "Ask AI").click()
     return app.run()
@@ -154,6 +165,8 @@ def test_new_image_clears_old_image_history(fake_ai):
     submit_image_question(app)
     assert len(app.session_state["image_history"]) == 1
 
+    # Uploading different content produces a new hash, so the old conversation
+    # and cached bytes must be discarded.
     app.file_uploader[0].set_value(("second.png", make_image_bytes("blue"), "image/png"))
     app.run()
 
@@ -171,6 +184,8 @@ def test_new_pdf_clears_old_pdf_history(fake_ai):
     submit_pdf_question(app)
     assert len(app.session_state["pdf_history"]) == 1
 
+    # A new PDF must not inherit answers, page selection, or rendered pages
+    # from the previous document.
     app.file_uploader[0].set_value(
         ("second.pdf", make_pdf_bytes("Second document."), "application/pdf")
     )
@@ -181,6 +196,8 @@ def test_new_pdf_clears_old_pdf_history(fake_ai):
 
 def test_invalid_image_shows_a_friendly_error(fake_ai):
     app = AppTest.from_file(APP_PATH).run()
+    # The uploader only filters by extension, so the content check must catch
+    # this and show a message instead of raising.
     app.file_uploader[0].set_value(("bad.png", b"not an image", "image/png"))
     app.run()
 
@@ -220,6 +237,8 @@ def test_clear_session_resets_documents_and_answers(fake_ai):
 
 
 def test_missing_configuration_shows_a_warning(monkeypatch):
+    # get_settings() loads .env, so remove both variables to simulate an
+    # unconfigured machine regardless of the developer's local file.
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_MODEL", raising=False)
 
