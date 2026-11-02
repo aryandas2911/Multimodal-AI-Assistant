@@ -217,6 +217,8 @@ def extract_pdf_text(pdf_bytes: bytes) -> list[dict[str, object]]:
         pages = []
         for page_index in range(document.page_count):
             page = document.load_page(page_index)
+            # "text" mode returns the page's normal reading order. PyMuPDF can
+            # return an empty string for scanned pages that have no text layer.
             text = _normalize_text(page.get_text("text"))
             pages.append(
                 {
@@ -252,6 +254,8 @@ def render_pdf_page(pdf_bytes: bytes, page_number: int) -> bytes:
             )
 
         page = document.load_page(page_number - 1)
+        # PDF coordinates are in points (72 per inch), so this converts the
+        # page size to pixels at the chosen DPI before rendering.
         width = page.rect.width * RENDER_DPI / 72
         height = page.rect.height * RENDER_DPI / 72
 
@@ -334,6 +338,8 @@ def select_relevant_pages(
         if page_number in selected_numbers:
             continue
 
+        # Count how often each question keyword appears on this page. This is a
+        # simple frequency score, not a measure of meaning or relevance.
         text = str(page["text"]).lower()
         score = sum(text.count(keyword) for keyword in keywords)
         if score > 0:

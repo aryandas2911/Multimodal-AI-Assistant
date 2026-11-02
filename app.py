@@ -58,6 +58,11 @@ st.set_page_config(
 # The cache is cleared when a new document is loaded.
 @st.cache_data(show_spinner=False, max_entries=40)
 def _cached_render_pdf_page(pdf_bytes: bytes, page_number: int) -> bytes:
+    """Return cached PNG bytes for one rendered PDF page.
+
+    Streamlit hashes the arguments, so the same document and page number reuse
+    the stored image instead of rendering the page again.
+    """
     return render_pdf_page(pdf_bytes, page_number)
 
 
@@ -224,6 +229,8 @@ def _build_pdf_page_context(
     selected_pages: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     """Combine selected page text with fresh rendered PNG images."""
+    # Look pages up by their 1-based number so the text and image always belong
+    # to the same page, even if the selection order changes.
     page_lookup = {int(page["page_number"]): page for page in pages}
     context = []
 
@@ -309,6 +316,8 @@ def _render_pdf_qa() -> None:
         options=list(range(1, page_count + 1)),
         key=f"pdf_page_selector_{signature[:12]}",
     )
+    # Remember the current selection in session state so it can be reused by
+    # other parts of the page (for example, a future follow-up question).
     st.session_state.pdf_page_number = page_number
 
     # The preview always shows the full rendered page, not only extracted text.

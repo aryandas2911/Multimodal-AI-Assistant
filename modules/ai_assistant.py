@@ -268,6 +268,8 @@ def _validate_pdf_context(page_context: list[dict]) -> None:
     total_text_chars = 0
     total_image_bytes = 0
 
+    # Validate every page before building the request. This prevents a large or
+    # malformed payload from reaching the API and failing with a vague error.
     for page in page_context:
         if not isinstance(page, dict):
             raise AIAssistantError("The PDF page context is not valid.")
@@ -334,6 +336,8 @@ def ask_pdf(
         if page_text:
             text_block = page_text
         else:
+            # Tell the model that the empty string is expected on scanned pages
+            # and that the rendered image is the source of truth there.
             text_block = (
                 "[No selectable text was found on this page. "
                 "Use the rendered page image.]"
