@@ -1,0 +1,19 @@
+# Web interface
+streamlit==1.66.1
+
+# AI integration (official Groq SDK)
+groq==1.7.0
+
+# PDF and image processing
+PyMuPDF==1.28.2
+Pillow==13.0.0
+
+# Voice input and optional local speech output
+SpeechRecognition==3.17.0
+pyttsx3==2.99
+
+# Configuration
+python-dotenv==1.2.4
+
+# Testing
+pytest==9.2.0
