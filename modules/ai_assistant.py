@@ -62,6 +62,13 @@ PDF_SYSTEM_INSTRUCTION = (
     "instead of inventing details."
 )
 
+# Text-only requests are used by the voice assistant's General context.
+TEXT_SYSTEM_INSTRUCTION = (
+    "You are a helpful assistant. Answer the user's question clearly and "
+    "accurately. If you are unsure or the answer cannot be determined, say so "
+    "instead of inventing information."
+)
+
 
 class ConfigurationError(Exception):
     """Raised when required application configuration is missing or invalid."""
@@ -124,10 +131,12 @@ def create_client(settings: AppSettings | None = None) -> Groq:
     return Groq(api_key=settings.api_key)
 
 
-def _validate_question(question: str, subject: str = "the image") -> str:
+def _validate_question(question: str, subject: str | None = None) -> str:
     """Clean the question and reject empty or overly long input."""
     if not isinstance(question, str) or not question.strip():
-        raise AIAssistantError(f"Please enter a question about {subject}.")
+        if subject:
+            raise AIAssistantError(f"Please enter a question about {subject}.")
+        raise AIAssistantError("Please enter a question.")
 
     cleaned_question = question.strip()
     if len(cleaned_question) > MAX_QUESTION_LENGTH:
@@ -154,13 +163,14 @@ def _request_completion(
     client: Groq,
     settings: AppSettings,
     max_completion_tokens: int,
+    model: str | None = None,
 ) -> str:
     """Send one chat request and convert provider errors into safe messages."""
     try:
         # Low temperature gives more consistent answers. A token limit controls
         # response length/cost, and the timeout prevents a frozen request.
         response = client.chat.completions.create(
-            model=settings.vision_model,
+            model=model or settings.vision_model,
             messages=messages,
             temperature=0.2,
             max_completion_tokens=max_completion_tokens,
@@ -224,7 +234,7 @@ def ask_image(
     The image and question are sent together in one multimodal chat request.
     Pass a pre-built client/settings in tests to avoid reading .env again.
     """
-    cleaned_question = _validate_question(question)
+    cleaned_question = _validate_question(question, subject="the image")
     _validate_image_input(image_bytes, mime_type)
 
     if settings is None:
@@ -251,6 +261,37 @@ def ask_image(
     ]
 
     return _request_completion(messages, client, settings, max_completion_tokens=1024)
+
+
+def ask_text(
+    question: str,
+    client: Groq | None = None,
+    settings: AppSettings | None = None,
+) -> str:
+    """Ask a text-only question and return the answer.
+
+    This uses the text model configured with GROQ_MODEL. It is the simplest
+    path for general voice questions, where no image or PDF is involved.
+    """
+    cleaned_question = _validate_question(question)
+
+    if settings is None:
+        settings = get_settings()
+    if client is None:
+        client = create_client(settings)
+
+    messages = [
+        {"role": "system", "content": TEXT_SYSTEM_INSTRUCTION},
+        {"role": "user", "content": cleaned_question},
+    ]
+
+    return _request_completion(
+        messages,
+        client,
+        settings,
+        max_completion_tokens=1024,
+        model=settings.model,
+    )
 
 
 def _validate_pdf_context(page_context: list[dict]) -> None:

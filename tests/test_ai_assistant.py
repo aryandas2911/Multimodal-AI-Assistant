@@ -1,4 +1,4 @@
-"""Tests for configuration and Groq image question answering."""
+"""Tests for configuration and Groq text and image question answering."""
 
 from types import SimpleNamespace
 
@@ -18,10 +18,12 @@ from groq import (
 from modules.ai_assistant import (
     DEFAULT_VISION_MODEL,
     SYSTEM_INSTRUCTION,
+    TEXT_SYSTEM_INSTRUCTION,
     AIAssistantError,
     AppSettings,
     ConfigurationError,
     ask_image,
+    ask_text,
     create_client,
     get_settings,
 )
@@ -291,3 +293,27 @@ def test_missing_response_content_is_rejected():
             client=FakeClient(content=None),
             settings=TEST_SETTINGS,
         )
+
+
+def test_ask_text_uses_text_model_and_builds_simple_request():
+    fake_client = FakeClient(content="Paging splits memory into fixed pages.")
+
+    answer = ask_text(
+        "What is paging?",
+        client=fake_client,
+        settings=TEST_SETTINGS,
+    )
+
+    assert answer == "Paging splits memory into fixed pages."
+    call = fake_client.completions.last_call
+    # General voice questions use GROQ_MODEL, not the vision model.
+    assert call["model"] == "test-text-model"
+    assert call["messages"] == [
+        {"role": "system", "content": TEXT_SYSTEM_INSTRUCTION},
+        {"role": "user", "content": "What is paging?"},
+    ]
+
+
+def test_ask_text_rejects_empty_question():
+    with pytest.raises(AIAssistantError, match="enter a question"):
+        ask_text("   ", client=FakeClient(), settings=TEST_SETTINGS)
