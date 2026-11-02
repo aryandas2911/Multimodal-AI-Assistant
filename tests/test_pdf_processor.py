@@ -127,6 +127,8 @@ def test_multipage_text_has_correct_page_numbers():
 
     pages = extract_pdf_text(pdf_bytes)
 
+    # PyMuPDF uses 0-based page indexes internally, but the public API must
+    # expose 1-based page numbers so the UI and prompts match what users see.
     assert len(pages) == 3
     assert [page["page_number"] for page in pages] == [1, 2, 3]
     assert "Paging" in pages[1]["text"]
@@ -147,6 +149,8 @@ def test_image_only_page_has_no_extracted_text():
 
     pages = extract_pdf_text(pdf_bytes)
 
+    # A scanned/image-only page has no text layer, so the app must rely on the
+    # rendered image instead of pretending the extracted text is complete.
     assert pages[0]["has_text"] is False
     assert pages[0]["text"] == ""
 
@@ -184,6 +188,7 @@ def test_encrypted_pdf_is_rejected():
     try:
         page = document.new_page()
         page.insert_text((72, 72), "Secret content")
+        # Create a real password-protected PDF so the check is not simulated.
         encrypted_bytes = document.tobytes(
             encryption=pymupdf.PDF_ENCRYPT_AES_256,
             owner_pw="owner-password",
@@ -197,6 +202,8 @@ def test_encrypted_pdf_is_rejected():
 
 
 def test_oversized_pdf_is_rejected():
+    # The size check runs before the file is parsed, so fake bytes are enough
+    # and the test does not create a real 20 MB PDF.
     oversized_bytes = b"%PDF-1.4" + b"\x00" * (MAX_PDF_BYTES + 1)
 
     with pytest.raises(PDFProcessingError, match="too large"):
@@ -221,6 +228,8 @@ def test_keyword_matching_selects_relevant_page():
         )
     )
 
+    # Only page 3 contains the question keyword "segmentation", so the simple
+    # frequency heuristic should select it.
     selected = select_relevant_pages(pages, "How does segmentation work?")
 
     assert [page["page_number"] for page in selected] == [3]
@@ -268,12 +277,16 @@ def test_low_confidence_selection_asks_for_manual_page():
         )
     )
 
+    # The question shares no keywords with any page, so the app must ask for a
+    # manual page instead of sending an arbitrary or misleading selection.
     with pytest.raises(PDFProcessingError, match="manually"):
         select_relevant_pages(pages, "Explain quantum entanglement.")
 
 
 def test_ask_pdf_includes_text_and_page_images():
     fake_client = FakeClient(content="Paging is explained on page 2.")
+    # Page 3 intentionally has empty text to stand in for a scanned page. The
+    # request must still include its rendered image.
     page_context = [
         {
             "page_number": 2,
@@ -306,10 +319,14 @@ def test_ask_pdf_includes_text_and_page_images():
 
     content_parts = call["messages"][1]["content"]
     prompt = content_parts[0]["text"]
+    # The extracted text and page markers must be present even when one page
+    # has no selectable text.
     assert "PAGE 2 TEXT" in prompt
     assert "PAGE 3 TEXT" in prompt
     assert "No selectable text" in prompt
 
+    # Both pages must also be attached as base64 image data URLs, because the
+    # model needs the rendered pages to see diagrams and scanned content.
     image_parts = [part for part in content_parts if part["type"] == "image_url"]
     assert len(image_parts) == 2
     assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
@@ -327,6 +344,8 @@ def test_ask_pdf_requires_page_context():
 
 
 def test_ask_pdf_handles_api_errors_safely():
+    # Build a realistic Groq rate-limit error whose raw message contains
+    # provider details. The user-facing error must not expose that raw text.
     request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
     response = httpx.Response(429, request=request)
     error = RateLimitError("raw provider details", response=response, body=None)
