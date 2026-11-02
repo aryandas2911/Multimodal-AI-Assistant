@@ -4,6 +4,7 @@ import streamlit as st
 
 from modules.ai_assistant import ConfigurationError, get_settings
 
+# Modes are defined once and reused by both the sidebar and the page content.
 MODES = {
     "Image Question Answering": (
         "Ask questions about an uploaded image. The image pipeline will be "
@@ -19,6 +20,7 @@ MODES = {
     ),
 }
 
+# Streamlit requires set_page_config to be the first Streamlit command run.
 st.set_page_config(
     page_title="Multimodal AI Assistant",
     page_icon="🤖",
@@ -32,12 +34,16 @@ st.write(
 )
 st.caption("Phase 1: project setup and application shell")
 
+# Streamlit reruns the whole script when a widget changes, so the selected
+# mode is read directly and used to render the rest of the page.
 with st.sidebar:
     st.header("Modes")
     selected_mode = st.sidebar.radio("Choose a mode", list(MODES))
     st.divider()
 
     st.subheader("Configuration")
+    # Validate configuration for display only. No client or API call is created
+    # here, so the app can open without a Groq key.
     try:
         settings = get_settings()
     except ConfigurationError as error:

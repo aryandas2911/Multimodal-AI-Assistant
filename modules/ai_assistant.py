@@ -13,6 +13,7 @@ from groq import Groq
 # Load variables from .env once when the module is imported.
 load_dotenv()
 
+# Detect an unedited copy of .env.example instead of treating it as a real key.
 PLACEHOLDER_API_KEY = "your_api_key_here"
 
 
@@ -24,6 +25,7 @@ class ConfigurationError(Exception):
 class AppSettings:
     """Validated application settings."""
 
+    # Keep the secret out of repr output, logs, and debug displays.
     api_key: str = field(repr=False)
     model: str
 
@@ -71,4 +73,5 @@ def create_client(settings: AppSettings | None = None) -> Groq:
     if settings is None:
         settings = get_settings()
 
+    # Constructing the client only prepares HTTP settings; it sends no request.
     return Groq(api_key=settings.api_key)

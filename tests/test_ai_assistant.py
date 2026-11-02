@@ -52,6 +52,7 @@ def test_api_key_is_hidden_from_settings_repr():
 
 
 def test_create_client_returns_groq_client():
+    # This checks client construction only; no network request is made.
     settings = AppSettings(api_key="gsk_test_key", model="test-model")
 
     client = create_client(settings)
