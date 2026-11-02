@@ -34,6 +34,8 @@ SUPPORTED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_QUESTION_LENGTH = 2000
 REQUEST_TIMEOUT_SECONDS = 60.0
 
+# The system instruction guides every image request. It asks the model to stay
+# grounded in the image and to admit when something cannot be determined.
 SYSTEM_INSTRUCTION = (
     "You are a helpful multimodal assistant. Analyze the supplied image "
     "carefully and answer the user's question accurately. Describe only details "
@@ -68,6 +70,9 @@ def get_settings() -> AppSettings:
         ConfigurationError: If the API key or text model is missing, or if the
             example placeholder key is still being used.
     """
+    # Secrets and model names come from environment variables, never from code.
+    # GROQ_MODEL is reserved for later text features; image questions use the
+    # separate vision model so either can be changed without touching the code.
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     model = os.getenv("GROQ_MODEL", "").strip()
     vision_model = os.getenv("GROQ_VISION_MODEL", "").strip() or DEFAULT_VISION_MODEL
@@ -146,10 +151,13 @@ def ask_image(
     if client is None:
         client = create_client(settings)
 
-    # Groq accepts local images as a base64 data URL inside the chat message.
+    # JSON cannot carry raw bytes, so the image becomes a base64 data URL.
+    # Groq accepts this inside the same message as the text question.
     encoded_image = base64.b64encode(image_bytes).decode("ascii")
     image_url = f"data:{mime_type};base64,{encoded_image}"
 
+    # A multimodal message has two parts: the question text and the image.
+    # The system message sets the behavior for the whole request.
     messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
         {
@@ -162,6 +170,8 @@ def ask_image(
     ]
 
     try:
+        # Low temperature gives more consistent answers. A token limit controls
+        # response length/cost, and the timeout prevents a frozen request.
         response = client.chat.completions.create(
             model=settings.vision_model,
             messages=messages,
@@ -170,6 +180,8 @@ def ask_image(
             stream=False,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
+    # Convert provider-specific exceptions into short, safe messages. The
+    # original exception is hidden with `from None` so details never reach the UI.
     except AuthenticationError:
         raise AIAssistantError(
             "Groq authentication failed. Check that GROQ_API_KEY is valid."
@@ -198,7 +210,8 @@ def ask_image(
             "The AI service returned an error. Please try again later."
         ) from None
 
-    # Read the response defensively: a provider may return no usable text.
+    # Groq normally returns choices[0].message.content, but the nesting is
+    # checked defensively so a malformed or blocked response cannot crash the app.
     try:
         content = response.choices[0].message.content
     except (AttributeError, IndexError, TypeError):

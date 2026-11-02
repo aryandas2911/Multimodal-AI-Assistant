@@ -53,6 +53,7 @@ def _reset_image_state() -> None:
 
 def _init_image_state() -> None:
     """Create the session keys used by the image question answering page."""
+    # session_state keeps values for one browser session across Streamlit reruns.
     if "image_uploader_key" not in st.session_state:
         # Changing this key gives us a fresh file_uploader for the Clear button.
         st.session_state.image_uploader_key = 0
@@ -62,6 +63,10 @@ def _init_image_state() -> None:
 
 def _render_image_qa() -> None:
     """Render upload, preview, question form, answer, and history."""
+    # The page order is: upload -> validate/preview -> ask -> show answer/history.
+
+    # `type` is only a browser-side filter. The real content check happens in
+    # validate_image(), so renaming a .txt file to .png is still rejected.
     uploaded_file = st.file_uploader(
         "Upload an image",
         type=IMAGE_FILE_TYPES,
@@ -82,11 +87,14 @@ def _render_image_qa() -> None:
     image_bytes = uploaded_file.getvalue()
 
     # A hash identifies the current image without storing the whole file twice.
+    # If the hash changes, the old answer and history belong to another image.
     signature = hashlib.sha256(image_bytes).hexdigest()
     if signature != st.session_state.image_signature:
         _reset_image_state()
         st.session_state.image_signature = signature
 
+        # Streamlit reruns this script often, so validate and cache the metadata
+        # once per image instead of reopening the file for every interaction.
         try:
             validate_image(image_bytes)
             st.session_state.image_info = get_image_info(image_bytes)
@@ -96,6 +104,7 @@ def _render_image_qa() -> None:
     if st.session_state.image_error:
         st.error(st.session_state.image_error)
     else:
+        # Preview the original upload. The AI receives a resized copy later.
         st.image(image_bytes, caption=uploaded_file.name)
 
         info = st.session_state.image_info
@@ -119,7 +128,8 @@ def _render_image_qa() -> None:
     st.subheader("Ask about this image")
 
     # A form prevents an API call on every widget rerun. The call happens only
-    # after the user presses Ask AI.
+    # after the user presses Ask AI. The key changes with the image, so a new
+    # upload starts with a fresh, empty question box.
     with st.form(key=f"image_question_form_{signature[:12]}"):
         question = st.text_input(
             "Your question",
@@ -128,12 +138,14 @@ def _render_image_qa() -> None:
         )
         submitted = st.form_submit_button("Ask AI", type="primary")
 
+    # Everything below this point runs only after the Ask AI button is clicked.
     if submitted:
         if not question.strip():
             st.warning("Please enter a question about the image.")
         else:
             try:
-                # Resize and convert the image before sending it to Groq.
+                # Prepare a smaller RGB copy so we do not upload the original
+                # large file or send an unsupported color mode to the API.
                 with st.spinner("Analyzing the image..."):
                     prepared_bytes, prepared_mime = prepare_image(image_bytes)
                     answer = ask_image(question, prepared_bytes, prepared_mime)
@@ -142,12 +154,15 @@ def _render_image_qa() -> None:
             except (ImageValidationError, AIAssistantError) as error:
                 st.error(str(error))
             else:
-                # Keep the latest answer and the simple session history.
+                # The latest answer gets its own section; the list keeps all
+                # question/answer pairs for the current uploaded image only.
                 st.session_state.image_answer = answer
                 st.session_state.image_history.append(
                     {"question": question.strip(), "answer": answer}
                 )
 
+    # These values survive reruns, so the answer stays visible after the user
+    # changes a widget or submits another question.
     if st.session_state.image_answer:
         st.subheader("Latest answer")
         st.markdown(st.session_state.image_answer)

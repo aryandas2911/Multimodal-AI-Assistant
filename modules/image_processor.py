@@ -10,7 +10,12 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 # The upload limit applies to the original file, before resizing.
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+# A small compressed file can still expand into a huge image in memory.
+# This limit prevents a decompression-bomb style image from freezing the app.
 MAX_PIXELS = 40_000_000
+
+# Enough resolution for diagrams and readable text without sending a huge image.
 MAX_DIMENSION = 1600
 
 # Pillow reports the detected format, not the file extension.
@@ -47,6 +52,9 @@ def _open_image(image_bytes: bytes) -> Image.Image:
     checked_bytes = _check_image_bytes(image_bytes)
 
     try:
+        # BytesIO lets Pillow read the uploaded bytes as if they were a file,
+        # without creating a temporary file on disk. Image.open() reads the
+        # header first; the full pixel data is decoded by image.load() below.
         image = Image.open(BytesIO(checked_bytes))
     except Image.DecompressionBombError as error:
         raise ImageValidationError("The image dimensions are too large.") from error
@@ -58,6 +66,8 @@ def _open_image(image_bytes: bytes) -> Image.Image:
         raise ImageValidationError("The image could not be opened.") from error
 
     try:
+        # Pillow detects the format from the file contents (the file signature),
+        # not from the filename, so a renamed text file cannot pass this check.
         image_format = image.format
         if image_format not in SUPPORTED_FORMATS:
             raise ImageValidationError(
@@ -93,6 +103,7 @@ def validate_image(image_bytes: bytes) -> None:
         ImageValidationError: If the file is empty, too large, corrupted, or
             not a supported JPEG, PNG, or WEBP image.
     """
+    # Opening and fully loading the image is enough; we do not need to keep it.
     image = _open_image(image_bytes)
     image.close()
 
@@ -141,6 +152,8 @@ def prepare_image(image_bytes: bytes) -> tuple[bytes, str]:
     Raises:
         ImageValidationError: If the image cannot be validated or processed.
     """
+    # Preparation happens in four steps: validate -> fix orientation -> convert
+    # to RGB -> resize and re-encode. The original bytes stay untouched.
     image = _open_image(image_bytes)
 
     try:
@@ -162,6 +175,8 @@ def prepare_image(image_bytes: bytes) -> tuple[bytes, str]:
                 Image.Resampling.LANCZOS,
             )
 
+            # Re-encode into the same general format, then return bytes that can
+            # be base64-encoded by the AI layer. PNG stays lossless for text.
             output = BytesIO()
             if source_format == "JPEG":
                 rgb_image.save(output, format="JPEG", quality=90, optimize=True)

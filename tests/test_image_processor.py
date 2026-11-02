@@ -21,6 +21,7 @@ def make_image_bytes(
     color: object = "red",
 ) -> bytes:
     """Create a small image in memory for a test."""
+    # BytesIO avoids writing temporary image files during the test.
     buffer = BytesIO()
     Image.new(mode, size, color).save(buffer, format=image_format)
     return buffer.getvalue()
@@ -86,6 +87,7 @@ def test_large_image_is_resized_and_keeps_aspect_ratio():
 
     prepared_bytes, _ = prepare_image(image_bytes)
 
+    # 3000 x 1000 becomes 1600 x 533, so the 3:1 ratio is preserved.
     with Image.open(BytesIO(prepared_bytes)) as prepared_image:
         assert prepared_image.size == (1600, 533)
 

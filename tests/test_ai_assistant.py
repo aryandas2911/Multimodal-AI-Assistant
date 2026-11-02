@@ -26,6 +26,7 @@ from modules.ai_assistant import (
     get_settings,
 )
 
+# Fake settings keep tests independent of the developer's real .env file.
 TEST_SETTINGS = AppSettings(
     api_key="gsk_test_key",
     model="test-text-model",
@@ -42,9 +43,11 @@ class FakeCompletions:
         self.last_call = None
 
     def create(self, **kwargs):
+        # Record the request so tests can inspect the model, messages, and image.
         self.last_call = kwargs
         if self.error is not None:
             raise self.error
+        # This mirrors the part of Groq's response object used by ask_image().
         return SimpleNamespace(
             choices=[
                 SimpleNamespace(
@@ -129,6 +132,7 @@ def test_create_client_returns_groq_client():
 
 
 def test_ask_image_builds_multimodal_request():
+    # The fake client lets us inspect the request without contacting Groq.
     fake_client = FakeClient(content="The image shows a red apple.")
 
     answer = ask_image(
@@ -147,6 +151,7 @@ def test_ask_image_builds_multimodal_request():
         "content": SYSTEM_INSTRUCTION,
     }
 
+    # The user message must contain both the question and the encoded image.
     user_content = call["messages"][1]["content"]
     assert {"type": "text", "text": "What is in this image?"} in user_content
     image_part = next(part for part in user_content if part["type"] == "image_url")
