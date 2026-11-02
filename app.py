@@ -1,4 +1,4 @@
-"""Streamlit entry point for the Multimodal AI Assistant (Phase 3)."""
+"""Streamlit entry point for the Multimodal AI Assistant (final integration)."""
 
 import hashlib
 
@@ -56,6 +56,10 @@ MODES = {
 
 IMAGE_FILE_TYPES = ["jpg", "jpeg", "png", "webp"]
 
+# Keep only a bounded number of question/answer pairs per document so a long
+# browser session does not grow without limit.
+MAX_HISTORY_ITEMS = 20
+
 # Streamlit requires set_page_config to be the first Streamlit command run.
 st.set_page_config(
     page_title="Multimodal AI Assistant",
@@ -77,13 +81,21 @@ def _cached_render_pdf_page(pdf_bytes: bytes, page_number: int) -> bytes:
     return render_pdf_page(pdf_bytes, page_number)
 
 
+def _append_history(history_key: str, item: dict) -> None:
+    """Append one Q&A item and keep only the newest MAX_HISTORY_ITEMS."""
+    history = st.session_state[history_key]
+    history.append(item)
+    if len(history) > MAX_HISTORY_ITEMS:
+        del history[:-MAX_HISTORY_ITEMS]
+
+
 def _reset_image_state() -> None:
     """Forget the current image's answer, errors, and question history."""
     st.session_state.image_signature = None
+    st.session_state.image_name = None
     st.session_state.image_info = None
     st.session_state.image_bytes = None
     st.session_state.image_error = None
-    st.session_state.image_answer = None
     st.session_state.image_history = []
 
 
@@ -128,6 +140,7 @@ def _render_image_qa() -> None:
     if signature != st.session_state.image_signature:
         _reset_image_state()
         st.session_state.image_signature = signature
+        st.session_state.image_name = uploaded_file.name
 
         # Streamlit reruns this script often, so validate and cache the metadata
         # once per image instead of reopening the file for every interaction.
@@ -194,41 +207,37 @@ def _render_image_qa() -> None:
             except (ImageValidationError, AIAssistantError) as error:
                 st.error(str(error))
             else:
-                # The latest answer gets its own section; the list keeps all
-                # question/answer pairs for the current uploaded image only.
-                st.session_state.image_answer = answer
-                st.session_state.image_history.append(
-                    {"question": question.strip(), "answer": answer}
+                # History belongs only to the current image. The helper keeps
+                # the list bounded so memory use stays predictable.
+                _append_history(
+                    "image_history",
+                    {"question": question.strip(), "answer": answer},
                 )
 
-    # These values survive reruns, so the answer stays visible after the user
-    # changes a widget or submits another question.
-    if st.session_state.image_answer:
-        st.subheader("Latest answer")
-        st.markdown(st.session_state.image_answer)
-
+    # Render the conversation with native chat bubbles. The history survives
+    # reruns and is cleared automatically when the image changes.
     if st.session_state.image_history:
-        with st.expander(
-            f"Question history for this image "
-            f"({len(st.session_state.image_history)})"
-        ):
-            for item in reversed(st.session_state.image_history):
-                st.markdown(f"**Question:** {item['question']}")
+        st.divider()
+        st.subheader("Conversation about this image")
+        for item in st.session_state.image_history:
+            with st.chat_message("user"):
+                st.markdown(item["question"])
+            with st.chat_message("assistant"):
                 st.markdown(item["answer"])
-                st.divider()
 
 
 def _reset_pdf_state() -> None:
     """Forget the current PDF's text, answers, and question history."""
     st.session_state.pdf_signature = None
+    st.session_state.pdf_name = None
     st.session_state.pdf_info = None
     st.session_state.pdf_bytes = None
     st.session_state.pdf_pages = []
     st.session_state.pdf_error = None
-    st.session_state.pdf_answer = None
-    st.session_state.pdf_answer_pages = []
     st.session_state.pdf_history = []
     st.session_state.pdf_page_number = 1
+    # A page selection from an older document must not leak into a new one.
+    st.session_state.pop("voice_pdf_page", None)
 
 
 def _init_pdf_state() -> None:
@@ -295,6 +304,7 @@ def _render_pdf_qa() -> None:
     if signature != st.session_state.pdf_signature:
         _reset_pdf_state()
         st.session_state.pdf_signature = signature
+        st.session_state.pdf_name = uploaded_file.name
         _cached_render_pdf_page.clear()
 
         try:
@@ -404,39 +414,28 @@ def _render_pdf_qa() -> None:
                 st.error(str(error))
             else:
                 pages_used = [int(page["page_number"]) for page in selected_pages]
-                st.session_state.pdf_answer = answer
-                st.session_state.pdf_answer_pages = pages_used
-                st.session_state.pdf_history.append(
+                _append_history(
+                    "pdf_history",
                     {
                         "question": question.strip(),
                         "answer": answer,
                         "mode": question_mode,
                         "pages": pages_used,
-                    }
+                    },
                 )
 
-    if st.session_state.pdf_answer:
-        st.subheader("Latest answer")
-        st.markdown(st.session_state.pdf_answer)
-        if st.session_state.pdf_answer_pages:
-            page_labels = ", ".join(
-                str(page) for page in st.session_state.pdf_answer_pages
-            )
-            st.caption(f"Pages analyzed: {page_labels}")
-
+    # One conversation per PDF. Switching documents clears this list in the
+    # document-identity block above, so answers never mix across PDFs.
     if st.session_state.pdf_history:
-        with st.expander(
-            f"Question history for this PDF "
-            f"({len(st.session_state.pdf_history)})"
-        ):
-            for item in reversed(st.session_state.pdf_history):
-                page_labels = ", ".join(str(page) for page in item["pages"])
-                st.markdown(
-                    f"**Question:** {item['question']}  \n"
-                    f"**Mode:** {item['mode']} · **Pages:** {page_labels}"
-                )
+        st.divider()
+        st.subheader("Conversation about this PDF")
+        for item in st.session_state.pdf_history:
+            with st.chat_message("user"):
+                st.markdown(item["question"])
+            with st.chat_message("assistant"):
                 st.markdown(item["answer"])
-                st.divider()
+                page_labels = ", ".join(str(page) for page in item["pages"])
+                st.caption(f"{item['mode']} · Pages analyzed: {page_labels}")
 
 
 def _clear_voice_results() -> None:
@@ -454,8 +453,11 @@ def _clear_voice_results() -> None:
 
 def _reset_voice_recording() -> None:
     """Forget the current recording while keeping the chosen context."""
+    old_signature = st.session_state.get("voice_audio_signature")
+    if old_signature:
+        # Remove the editor widget state for the discarded recording.
+        st.session_state.pop(f"voice_editor_{old_signature[:12]}", None)
     st.session_state.voice_audio_signature = None
-    st.session_state.voice_audio_bytes = None
     _clear_voice_results()
 
 
@@ -476,6 +478,18 @@ def _init_voice_state() -> None:
         st.session_state.voice_pdf_scope = "Selected page"
     if "voice_audio_signature" not in st.session_state:
         _reset_voice_recording()
+
+
+def _clear_all_state() -> None:
+    """Clear every feature, widget, and cached PDF page for this session."""
+    # New widget keys empty the uploaders and the audio recorder on rerun.
+    st.session_state.image_uploader_key += 1
+    _reset_image_state()
+    st.session_state.pdf_uploader_key += 1
+    _reset_pdf_state()
+    st.session_state.voice_audio_key += 1
+    _reset_voice_recording()
+    _cached_render_pdf_page.clear()
 
 
 def _invalidate_voice_answer() -> None:
@@ -559,8 +573,8 @@ def _render_voice_qa() -> None:
         if has_image:
             info = st.session_state.image_info or {}
             st.caption(
-                f"Using the current image: {info.get('width')} × "
-                f"{info.get('height')} pixels."
+                f"Using **{st.session_state.image_name}**: "
+                f"{info.get('width')} × {info.get('height')} pixels."
             )
         else:
             st.warning(
@@ -571,7 +585,8 @@ def _render_voice_qa() -> None:
         if has_pdf:
             info = st.session_state.pdf_info or {}
             st.caption(
-                f"Using the current PDF: {info.get('page_count')} pages."
+                f"Using **{st.session_state.pdf_name}**: "
+                f"{info.get('page_count')} pages."
             )
         else:
             st.warning(
@@ -644,7 +659,6 @@ def _render_voice_qa() -> None:
         # A new recording invalidates the old question, answer, and speech.
         _reset_voice_recording()
         st.session_state.voice_audio_signature = signature
-        st.session_state.voice_audio_bytes = audio_bytes
 
         try:
             with st.spinner("Transcribing your question..."):
@@ -743,13 +757,17 @@ def _render_voice_qa() -> None:
 
     if st.session_state.voice_answer:
         if current_scope and st.session_state.voice_answer_scope == current_scope:
-            st.subheader("AI answer")
-            st.markdown(st.session_state.voice_answer)
-            if st.session_state.voice_answer_pages:
-                page_labels = ", ".join(
-                    str(page) for page in st.session_state.voice_answer_pages
-                )
-                st.caption(f"Pages analyzed: {page_labels}")
+            st.divider()
+            st.subheader("Voice answer")
+            with st.chat_message("user"):
+                st.markdown(st.session_state.voice_answer_question or "")
+            with st.chat_message("assistant"):
+                st.markdown(st.session_state.voice_answer)
+                if st.session_state.voice_answer_pages:
+                    page_labels = ", ".join(
+                        str(page) for page in st.session_state.voice_answer_pages
+                    )
+                    st.caption(f"Pages analyzed: {page_labels}")
 
             # Speak the answer only on request. The generated WAV bytes are
             # cached by answer text, so reruns do not synthesize again.
@@ -790,13 +808,6 @@ def _render_voice_qa() -> None:
             )
 
 
-st.title("Multimodal AI Assistant")
-st.write(
-    "A college mini project that answers questions about images, PDFs, and "
-    "spoken questions, including optional spoken answers."
-)
-st.caption("Phase 4: voice assistant integration")
-
 _init_image_state()
 _init_pdf_state()
 _init_voice_state()
@@ -804,13 +815,16 @@ _init_voice_state()
 # Streamlit reruns the whole script when a widget changes, so the selected
 # mode is read directly and used to render the rest of the page.
 with st.sidebar:
-    st.header("Modes")
-    selected_mode = st.sidebar.radio("Choose a mode", list(MODES))
+    st.title("Multimodal AI Assistant")
+    st.caption("Images · PDFs · Voice")
     st.divider()
 
-    st.subheader("Configuration")
+    selected_mode = st.radio("Modes", list(MODES))
+    st.divider()
+
+    st.subheader("AI configuration")
     # Validate configuration for display only. No client or API call is created
-    # here, so the app can open without a Groq key.
+    # here, so the app can open without an API key.
     try:
         settings = get_settings()
     except ConfigurationError as error:
@@ -820,30 +834,42 @@ with st.sidebar:
         st.success("Groq API key loaded.")
         st.caption(f"Text model: {settings.model}")
         st.caption(f"Vision model: {settings.vision_model}")
-    st.caption("The API key is read from your local .env file and is never displayed.")
+    st.caption("The API key is read from .env and is never displayed.")
 
-st.subheader(f"Selected mode: {selected_mode}")
-st.info(MODES[selected_mode])
+    st.divider()
+    st.subheader("About")
+    st.caption(
+        "A B.Tech mini project demonstrating multimodal question answering "
+        "with a vision-language model and browser-based voice input."
+    )
+    st.caption(
+        "Uploaded images, PDF pages, and recordings may be sent to external "
+        "Groq or Google speech services. They are not kept on this server."
+    )
+    st.divider()
+
+    # One control that truly clears all three feature states and widget keys.
+    if st.button("Clear session"):
+        _clear_all_state()
+        st.rerun()
+
+st.title(selected_mode)
+st.caption(MODES[selected_mode])
 st.divider()
 
-if selected_mode == "Image Question Answering":
-    _render_image_qa()
-elif selected_mode == "PDF Question Answering":
-    _render_pdf_qa()
-else:
-    _render_voice_qa()
+try:
+    if selected_mode == "Image Question Answering":
+        _render_image_qa()
+    elif selected_mode == "PDF Question Answering":
+        _render_pdf_qa()
+    else:
+        _render_voice_qa()
+except Exception:
+    # Provider and file errors are handled inside each page. This is the last
+    # safety net for unexpected bugs and deliberately hides internal details.
+    st.error(
+        "An unexpected error occurred. Please clear the session and try again."
+    )
 
 st.divider()
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("**Images: available**")
-    st.caption("Upload an image and ask questions about it.")
-with col2:
-    st.markdown("**PDFs: available**")
-    st.caption("Ask about text, diagrams, tables, and scanned pages.")
-with col3:
-    st.markdown("**Voice: available**")
-    st.caption("Record a question and optionally hear the answer.")
-
-st.caption("Multimodal AI Assistant · Phase 4")
+st.caption("Multimodal AI Assistant · Final integration")

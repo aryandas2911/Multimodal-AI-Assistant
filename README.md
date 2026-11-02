@@ -1,137 +1,221 @@
 # Multimodal AI Assistant
 
-A college mini project that combines image question answering, multimodal PDF
-question answering, and (later) voice-based AI interaction in one Streamlit
-application.
+A college mini project that answers questions about **images**, **PDF documents**,
+and **spoken questions**. It combines image understanding, visual PDF analysis,
+speech recognition, and optional local speech output in one Streamlit app.
 
-**Phase 3 is implemented:** users can upload a PDF, preview a rendered page, and
-ask questions about selectable text, diagrams, tables, charts, and scanned
-pages. The AI receives both extracted text and rendered page images.
+> **Provider note:** the project brief mentioned Gemini, but this implementation
+> uses the project's existing **Groq** integration. No Gemini SDK, LangChain,
+> vector database, or OCR framework is used. All AI requests go through the
+> official Groq Python SDK.
 
-## Features
+---
 
-### Available now
+## 1. Problem Statement
 
-- **Image Question Answering**
-  - Upload JPEG, PNG, or WEBP images up to 10 MB.
-  - Validate file contents, correct EXIF orientation, and resize large images.
-  - Ask about objects, scenes, diagrams, screenshots, and visible text.
+Most student projects can answer questions about plain text, but real study
+material is multimodal: lecture slides contain diagrams, screenshots contain
+text, PDFs contain tables and scanned pages, and users often prefer speaking
+instead of typing. Extracting PDF text alone is not enough because it loses
+layout and visual meaning.
 
-- **PDF Question Answering**
-  - Upload PDFs up to 20 MB and 30 pages.
-  - Validate, open, and reject empty, corrupted, encrypted, or oversized PDFs.
-  - Extract selectable text page by page while preserving page numbers.
-  - Render pages as PNG at 144 DPI for visual understanding.
-  - **Selected page mode:** send one page's text and rendered image.
-  - **Whole document mode:** use keyword scoring to select up to 3 pages, then
-    send their text and images.
-  - Preview the selected page in the application.
-  - Keep the latest answer and a session-only question history.
-  - Show which pages were analyzed and ask the model to cite page numbers.
-  - Clear the current document and its answers.
+This project provides a single assistant that:
 
-### Planned
+- Reads selectable text from images and PDFs.
+- Looks at rendered page images so diagrams, tables, charts, and scanned pages
+  can also be understood.
+- Accepts typed or spoken questions.
+- Returns grounded answers with page references where possible.
+- Can speak an answer aloud on supported local systems.
 
-- **Voice Assistant** - speak a question and optionally hear a spoken answer.
+## 2. Objectives
 
-## Technology Stack
+1. Integrate image, PDF, and voice question answering in one application.
+2. Use a vision-language model for both images and rendered PDF pages.
+3. Keep the implementation understandable for a B.Tech mini project.
+4. Validate all user inputs and fail with friendly messages.
+5. Avoid unnecessary frameworks and permanent storage of user files.
+6. Test the processing and AI layers without making paid API calls.
 
-| Purpose | Library |
-| --- | --- |
-| Web interface | Streamlit 1.66.1 |
-| AI API client | Groq Python SDK 1.7.0 |
-| PDF processing | PyMuPDF 1.28.2 |
-| Image processing | Pillow 13.0.0 |
-| Speech-to-text | SpeechRecognition 3.17.0 (not used yet) |
-| Local text-to-speech | pyttsx3 2.99 (optional, not used yet) |
-| Configuration | python-dotenv 1.2.4 |
-| Testing | pytest 9.2.0, httpx 0.28.1 |
+## 3. Main Features
 
-> **Note:** The project brief named Gemini, but the project currently uses the
-> existing Groq integration. No Gemini SDK or new AI dependency was added.
-> The same vision-capable Groq model handles images and rendered PDF pages.
+### Image Question Answering
 
-## Requirements
+- Upload JPG, JPEG, PNG, or WEBP up to **10 MB**.
+- Content is validated with Pillow, not just the filename.
+- EXIF orientation is corrected, transparency is placed on white, and large
+  images are resized to at most **1600 px** on the long side.
+- Ask natural-language questions about objects, scenes, diagrams, or visible text.
+- Answers appear as a chat conversation for the current image.
 
-- **Python 3.11** (recorded in `.python-version`)
-- A Groq API key from <https://console.groq.com/keys>
-- Internet access for AI requests
+### Multimodal PDF Question Answering
 
-The application opens without an API key and shows a configuration warning.
-AI answers require a valid key.
+- Upload PDFs up to **20 MB** and **30 pages**.
+- Reject empty, corrupted, encrypted, oversized, or over-length PDFs.
+- Extract selectable text page by page with correct 1-based page numbers.
+- Render pages to PNG at **144 DPI** for visual understanding.
+- **Selected page** mode sends one page's text and image.
+- **Whole document** mode uses simple keyword scoring to choose at most
+  **3 pages**, then sends their text and images.
+- Preview the rendered page in the app.
+- Show a chat conversation with the pages analyzed for each answer.
 
-## Project Structure
+### Voice Assistant
+
+- Record from the browser with `st.audio_input` (no PyAudio, no server mic).
+- Enforce a **30 second** limit and validate WAV structure and size.
+- Transcribe with SpeechRecognition's `recognize_google`.
+- Show an editable transcription before submission.
+- Route the question explicitly to **General**, **Current Image**, or
+  **Current PDF** context.
+- Display the answer as chat bubbles.
+- Generate a WAV answer with pyttsx3 and play it with `st.audio` where the
+  operating system supports local speech synthesis.
+
+### Session Management
+
+- Streamlit `session_state` keeps each browser session separate.
+- Answers survive UI reruns.
+- Uploading a different image or PDF clears that document's conversation.
+- Histories are capped at **20 Q&A pairs**.
+- Editing a voice question or changing context invalidates old answers/speech.
+- A sidebar **Clear session** button resets all three features.
+
+## 4. Technology Stack
+
+Versions tested in the project virtual environment (**Python 3.11.15**):
+
+| Purpose | Package | Tested version |
+| --- | --- | --- |
+| Web interface | `streamlit` | 1.66.1 |
+| AI provider SDK | `groq` | 1.7.0 |
+| PDF parsing and rendering | `PyMuPDF` | 1.28.2 |
+| Image validation and resizing | `Pillow` | 13.0.0 |
+| Speech-to-text | `SpeechRecognition` | 3.17.0 |
+| Local text-to-speech | `pyttsx3` | 2.99 |
+| Environment variables | `python-dotenv` | 1.2.4 |
+| Testing | `pytest` | 9.2.0 |
+| Test HTTP objects | `httpx` | 0.28.1 |
+
+Windows speech support pulled in `comtypes 1.4.17`, `pywin32 312`, and
+`pypiwin32 223`. These are installed automatically as pyttsx3 dependencies; they
+are not separate project requirements.
+
+**No Google GenAI SDK is installed or required.** The app uses Groq's
+OpenAI-compatible chat completions API for both text and vision requests.
+
+## 5. System Architecture
 
 ```text
-multimodal-ai-assistant/
-├── app.py
+                         Browser (Streamlit UI)
+                                  |
+        +-------------------------+-------------------------+
+        |                         |                         |
+   Image upload              PDF upload               Audio recording
+        |                         |                   (st.audio_input)
+        v                         v                         |
+ image_processor.py         pdf_processor.py         voice_processor.py
+ - validate                 - validate               - validate WAV
+ - orient/resize            - extract text           - SpeechRecognition
+ - RGB/re-encode            - render 144 DPI PNG       (Google service)
+        |                    - select pages                   |
+        |                         |                         v
+        +-----------+-------------+-------------------> transcribed text
+                    |
+                    v
+             ai_assistant.py
+        - ask_image / ask_pdf / ask_text
+        - Groq text / vision model
+        - safe error messages
+                    |
+                    v
+             Answer displayed as chat
+                    |
+                    v
+          voice_processor.text_to_speech (pyttsx3)
+                    |
+                    v
+             st.audio browser playback
+```
+
+Request flow:
+
+1. The browser sends file or audio bytes to Streamlit.
+2. The matching processor validates and prepares the content.
+3. `ai_assistant.py` builds a multimodal chat request and sends it to Groq.
+4. The answer is stored in `st.session_state` and rendered.
+5. Voice answers can be synthesized locally and returned as WAV bytes.
+
+## 6. Folder Structure
+
+```text
+Multimodal AI Assistant/
+├── app.py                      # Streamlit UI, routing, session state
 ├── modules/
 │   ├── __init__.py
-│   ├── ai_assistant.py       # configuration and Groq AI requests
-│   ├── image_processor.py    # image validation and preprocessing
-│   ├── pdf_processor.py      # PDF validation, text, rendering, page selection
-│   └── voice_processor.py    # planned
+│   ├── ai_assistant.py         # Groq configuration and AI requests
+│   ├── image_processor.py      # image validation and preprocessing
+│   ├── pdf_processor.py        # PDF validation, text, rendering, selection
+│   └── voice_processor.py      # STT, TTS, audio validation, voice routing
 ├── tests/
 │   ├── __init__.py
 │   ├── test_ai_assistant.py
 │   ├── test_image_processor.py
 │   ├── test_pdf_processor.py
 │   ├── test_voice_processor.py
-│   └── manual_image_qa.py    # optional real-API check
+│   ├── test_app_integration.py # AppTest session-state tests
+│   └── manual_image_qa.py      # optional real-API image check
 ├── uploads/
-│   └── .gitkeep
+│   └── .gitkeep                # uploads are not written here by the app
 ├── .env.example
 ├── .gitignore
 ├── .python-version
-├── requirements.txt
-└── README.md
+├── PROJECT_EXPLANATION.md
+├── README.md
+└── requirements.txt
 ```
 
-## Setup
+## 7. Installation
 
-### 1. Check Python
+Requirements: **Python 3.11**, internet access for AI/speech services, and a Groq
+API key from <https://console.groq.com/keys>.
 
 ```bash
 python --version
+python -m venv .venv
 ```
 
-You should see Python 3.11.x.
+Activate the environment:
 
-### 2. Create and activate a virtual environment
-
-Windows (PowerShell):
+Windows PowerShell:
 
 ```powershell
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-Windows (Command Prompt):
+Windows Command Prompt:
 
 ```bat
-python -m venv .venv
 .venv\Scripts\activate.bat
 ```
 
 macOS / Linux:
 
 ```bash
-python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+Install exact pinned dependencies:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m pip check
 ```
 
-### 4. Configure the environment
+## 8. API Key Configuration
 
 Copy the example file:
-
-Windows:
 
 ```powershell
 Copy-Item .env.example .env
@@ -143,7 +227,7 @@ macOS / Linux:
 cp .env.example .env
 ```
 
-Set the values in `.env`:
+Edit `.env`:
 
 ```dotenv
 GROQ_API_KEY=your_real_key_here
@@ -151,128 +235,190 @@ GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_VISION_MODEL=qwen/qwen3.8-27b
 ```
 
-- `GROQ_API_KEY` is required for AI requests and is never displayed.
-- `GROQ_MODEL` is reserved for future text-only features.
-- `GROQ_VISION_MODEL` handles both image questions and rendered PDF pages.
-- The default vision model is configured in `modules/ai_assistant.py` and can
-  be overridden in `.env`.
+- `GROQ_API_KEY` is required for AI answers and is never displayed.
+- `GROQ_MODEL` is used by general text questions (voice General context).
+- `GROQ_VISION_MODEL` is used for images and rendered PDF pages.
+- `.env` is ignored by Git. Never commit it.
 
-### 5. Run the application
+If the key is missing, the app still opens and shows a configuration warning.
+Invalid keys, unavailable models, rate limits, timeouts, and empty responses are
+reported with short, safe messages.
+
+## 9. How to Run
 
 ```bash
 streamlit run app.py
 ```
 
-Open <http://localhost:8501>.
+Open the URL shown in the terminal, normally <http://localhost:8501>.
 
-## Using PDF Question Answering
+The app can start without a key. AI features require valid configuration.
 
-1. Choose **PDF Question Answering** in the sidebar.
-2. Upload a PDF.
-3. Review the page count, file size, and rendered page preview.
-4. Select **Selected page** or **Whole document**.
-5. Type a question and press **Ask AI**.
-6. Read the answer and the list of pages that were analyzed.
+## 10. How to Use Each Feature
+
+### Image Question Answering
+
+1. Choose **Image Question Answering** in the sidebar.
+2. Upload a PNG, JPEG, or WEBP image.
+3. Check the preview and image metadata.
+4. Type a question and press **Ask AI**.
+5. Read the answer in the conversation below the form.
 
 Example questions:
 
-- "Summarize page 2."
+- "What objects are visible?"
+- "Explain this diagram."
+- "Read the text in this screenshot."
+- "What is unusual about this picture?"
+
+### PDF Question Answering
+
+1. Choose **PDF Question Answering**.
+2. Upload a PDF.
+3. Review the page count, size, and rendered page preview.
+4. Select a preview page.
+5. Choose **Selected page** or **Whole document**.
+6. Type a question and press **Ask AI**.
+7. Read the answer and the pages analyzed.
+
+Example questions:
+
+- "Summarize page 1."
 - "Explain the diagram on page 5."
-- "What is the difference between paging and segmentation?"
 - "Explain the table on page 7."
 - "What does this flowchart represent?"
-- "List the important topics discussed in this document."
+- "What is the difference between paging and segmentation?"
 - "Explain this scanned page."
 
-The page images are important. A scanned page has no selectable text, and a
-diagram or table may lose meaning if only its text is extracted. The AI prompt
-therefore includes rendered page images for every supplied page.
+Whole-document mode selects at most three pages using simple keyword overlap.
+If no page matches confidently, the app asks you to choose a page manually.
 
-## How PDF Processing Works
+### Voice Assistant
 
-1. `validate_pdf()` opens the uploaded bytes with
-   `pymupdf.open(stream=pdf_bytes, filetype="pdf")`, rejects encrypted,
-   corrupted, empty, oversized, or too-long documents, and closes the handle.
-2. `extract_pdf_text()` reads selectable text page by page, normalizes
-   whitespace, and marks image-only pages with `has_text=False`.
-3. `render_pdf_page()` renders a 1-based page number to PNG at 144 DPI and
-   validates the page boundaries.
-4. `select_relevant_pages()` handles whole-document mode:
-   - explicit references such as "page 4" are used first;
-   - remaining pages are ranked by simple keyword overlap;
-   - at most 3 pages are selected;
-   - if no page matches confidently, the user is asked to select one.
-5. `ask_pdf()` sends the selected pages' text and rendered images in one
-   multimodal Groq request and asks for page citations.
+1. Choose **Voice Assistant**.
+2. Select **General**, **Current Image**, or **Current PDF**.
+   - Current Image/PDF reuse a file already uploaded in that mode.
+3. For PDFs, choose selected page or whole document.
+4. Press the microphone, ask your question, and stop recording.
+5. Review and edit the transcription if needed.
+6. Press **Submit Question**.
+7. Read the answer and optionally press **Generate Speech**.
+8. Use **Reset interaction** to clear the recording and result.
 
-Page rendering is cached by Streamlit using the PDF content and page number.
-The cache is cleared when a different document is loaded.
+Speech recognition uses Google's online service, so it needs internet access.
+Text-to-speech uses the server's local pyttsx3 engine. If no engine is available,
+the app keeps the text answer and shows a warning.
 
-## Running the Tests
+## 11. Example Inputs and Outputs
+
+| Input | Question | Expected kind of answer |
+| --- | --- | --- |
+| Photo of a desk | "What objects are visible?" | List of visible objects grounded in the image |
+| Flowchart image | "Explain this diagram." | Description of boxes, arrows, and process flow |
+| Text PDF, page 1 | "Summarize page 1." | Summary citing page 1 |
+| PDF with a table | "Explain the table on page 7." | Column/row explanation from the rendered page |
+| Scanned PDF page | "What does this page contain?" | Visual reading of the rendered scan |
+| Spoken general question | "What is artificial intelligence?" | Short text answer, optionally spoken |
+| Spoken PDF question | "Summarize this document." | Answer using selected PDF pages |
+
+AI output is probabilistic. Answers should be checked against the source
+document, especially for numerical or medical/legal content.
+
+## 12. Testing
 
 ```bash
 python -m pytest
 ```
 
-Automated tests mock the Groq API. They do not use your key or consume credits.
-Synthetic PDFs are generated with PyMuPDF, so no external PDF files are needed.
+The suite mocks all external AI and speech services, so it does not use your key
+or consume credits. Synthetic images, PDFs, and WAV files are created in memory.
 
-Tests cover:
+Coverage includes:
 
-- Valid, empty, invalid, encrypted, oversized, and over-length PDFs.
-- Multi-page text extraction and page numbering.
-- Whitespace normalization and image-only pages.
-- Page rendering and invalid page numbers.
-- Keyword-based page selection and manual-selection fallback.
-- PDF request construction with both text and page images.
-- Safe handling of API errors.
+- Image validation, preprocessing, EXIF orientation, resizing, transparency.
+- PDF validation, encrypted/oversized/corrupt files, text extraction, numbering.
+- Page rendering, page selection, request construction with text and images.
+- Groq text/image/PDF request building and safe API error messages.
+- WAV decoding, duration/size limits, mocked speech recognition.
+- TTS success, unavailable engine, synthesis failure, text limiting.
+- Voice context routing, missing image/PDF context.
+- App-level session state, chat history, document reset, clear session, duplicate
+  transcription prevention, and missing configuration warning.
 
-### Optional real-API check
-
-The image-only manual script is still available and makes one real request:
+Optional real-API image check:
 
 ```bash
 python -m tests.manual_image_qa --image path/to/image.png
 ```
 
-To test PDFs against the real API, use the Streamlit UI and ask a question
-about a small PDF.
+This manual script is not collected by pytest because its name does not start
+with `test_`.
 
-## Phase 3 Scope
+### Manual demonstration checklist
 
-Implemented:
+| # | Check | Status |
+| --- | --- | --- |
+| 1 | Image: "What objects are visible?" | Requires a real Groq key |
+| 2 | Diagram: "Explain this diagram." | Requires a real Groq key |
+| 3 | Text PDF: "Summarize page 1." | Requires a real Groq key |
+| 4 | Flowchart PDF: "Explain the flowchart." | Requires a real Groq key |
+| 5 | Scanned PDF: "What does this page contain?" | Requires a real Groq key |
+| 6 | Record "What is artificial intelligence?" | Requires a microphone and Google speech access |
+| 7 | Spoken PDF question | Requires a microphone, speech access, and Groq key |
+| 8 | Generate speech | Local pyttsx3 synthesis was verified on Windows; audible playback depends on the machine |
+| 9 | Remove API key | Automated AppTest verifies the warning |
+| 10 | Invalid files | Automated tests verify friendly errors |
 
-- PDF upload, validation, page counting, and text extraction.
-- 144 DPI page rendering and in-app preview.
-- Selected-page and whole-document question modes.
-- Keyword-based page selection with a clear confidence limitation.
-- Text plus rendered-image multimodal PDF requests.
-- Session history, latest answer, page references, and clear controls.
-- Automated tests for processing, rendering, selection, and AI request building.
+## 13. Known Limitations
 
-Not implemented yet:
+- **No semantic retrieval.** Whole-document mode uses keyword frequency, not
+  embeddings. It can miss a relevant page if the wording differs.
+- **At most 3 PDF pages per request**, to stay within the vision model's image
+  limit and keep payloads small.
+- **Text extraction is not OCR.** Scanned pages are understood from the rendered
+  page image, so accuracy depends on scan quality and the vision model.
+- Password-protected PDFs are rejected.
+- Upload limits: images 10 MB, PDFs 20 MB / 30 pages, audio 30 seconds.
+- Speech recognition is online and may fail or mis-transcribe.
+- Local TTS needs a working system engine (SAPI5 on Windows, espeak on Linux)
+  and is not ideal for a multi-user production server.
+- The vision model may not support every diagram or language equally well.
+- Answers can be incomplete or wrong; the model is instructed to admit missing
+  context but this is not guaranteed.
+- The app does not provide authentication, databases, or long-term storage.
+- The project uses Groq rather than Gemini; model names must exist in your Groq
+  account.
 
-- Voice interaction.
-- Semantic search, embeddings, vector databases, or OCR engines.
-- Password-protected PDFs.
-- Guaranteed retrieval of every relevant page in a long document.
+## 14. Security and Privacy
 
-## Limitations
+- API keys are read from environment variables; `.env` is git-ignored.
+- The UI only reports whether a key is configured.
+- File types and sizes are validated before processing.
+- Uploaded content is never executed.
+- Uploaded files are processed in memory and are not permanently saved by the app.
+- TTS temporary WAV files use unique names and are deleted in a `finally` block.
+- Request timeouts are set for AI calls.
+- Document text, image bytes, and audio are not logged.
+- No raw provider error details are shown to users.
+- **Uploaded images, PDF pages, and questions may be sent to Groq. Recorded
+  audio is sent to Google's speech recognition service.** Do not upload private
+  material unless you are comfortable with that processing.
 
-- Whole-document mode uses **simple keyword matching**, not semantic retrieval.
-  It can miss a relevant page if the question uses different wording.
-- At most 3 pages are sent per request to stay within model and payload limits.
-- For long or ambiguous documents, use **Selected page** mode.
-- Text extraction is not OCR. Scanned pages are understood from the rendered
-  page image, so accuracy depends on image clarity and the vision model.
-- Very large pages that would exceed the rendering memory cap are rejected.
-- PDFs must be 20 MB or smaller and no more than 30 pages.
+## 15. Future Improvements
 
-## Security Notes
+- Optional OCR fallback for scanned PDFs.
+- Better page retrieval using embeddings, if the project scope allows it.
+- Streaming answers for faster perceived response.
+- Multilingual speech recognition and voices.
+- Cloud TTS for browser-friendly playback on headless servers.
+- User accounts and saved history.
+- PDF page-range selection and side-by-side citations.
+- Support for more document formats.
+- Evaluation set for measuring answer accuracy and hallucination rate.
 
-- `.env` is ignored by Git.
-- The app only reports whether a key is configured; it never prints the key.
-- Uploaded PDFs are processed in memory and are not saved by the app.
-- `.gitignore` excludes uploaded files and generated audio.
-- Extracted PDF text is not logged.
-- Do not put API keys in source code or `requirements.txt`.
+---
+
+## License and Academic Use
+
+This project was developed for academic demonstration. Model names, provider
+terms, quotas, and SDK versions should be checked before submission or deployment.
